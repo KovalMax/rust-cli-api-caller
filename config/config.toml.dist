@@ -1,0 +1,15 @@
+[api_settings]
+api_uri = ""
+auth_uri = ""
+auth_user = ""
+auth_password = ""
+[api_url]
+PROD = ""
+STAGE = ""
+SANDBOX = ""
+DEV = ""
+[auth_url]
+PROD = ""
+STAGE = ""
+SANDBOX = ""
+DEV = ""
