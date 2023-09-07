@@ -1,11 +1,11 @@
 use clap::Parser;
 use hyper::Method;
 
-use api_caller::{make_api_call, make_auth_call};
-use api_caller::cli::CliParams;
-use api_caller::client::create_client;
-use api_caller::config::parse_config;
-use api_caller::reader::{create_reader, CsvCell};
+use cli_api_caller::{make_api_call, make_auth_call};
+use cli_api_caller::cli::CliParams;
+use cli_api_caller::client::create_client;
+use cli_api_caller::config::parse_config;
+use cli_api_caller::reader::{create_reader, CsvCell};
 
 #[tokio::main]
 async fn main() {
