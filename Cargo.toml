@@ -1,5 +1,5 @@
 [package]
-name = "api-caller"
+name = "cli-api-caller"
 version = "0.1.0"
 edition = "2021"
 
