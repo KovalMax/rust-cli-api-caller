@@ -1,4 +1,4 @@
-use hyper::{Error, Method, Response};
+use hyper::{Method, Response};
 
 use crate::client::{ApiCaller, ApiRequest, AuthRequest, AuthResponse};
 
@@ -8,7 +8,7 @@ pub mod config;
 pub mod client;
 
 
-pub async fn make_auth_call(http: &ApiCaller, auth_url: String, username: String, password: String) -> Result<AuthResponse, Error> {
+pub async fn make_auth_call(http: &ApiCaller, auth_url: String, username: String, password: String) -> Result<AuthResponse, String> {
     let auth_request = AuthRequest::create(
         auth_url,
         Method::POST,

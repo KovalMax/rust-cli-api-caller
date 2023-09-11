@@ -1,10 +1,11 @@
 use hyper::{Body, Client, Method, Request, Response};
 use hyper::client::HttpConnector;
+use hyper_tls::HttpsConnector;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ApiCaller {
-    http: Client<HttpConnector>,
+    client: Client<HttpsConnector<HttpConnector>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -57,12 +58,12 @@ impl ApiCaller {
             .uri(request.url)
             .body(Body::from(request.body));
 
-        let resp = self.http.request(req.unwrap()).await;
+        let resp = self.client.request(req.unwrap()).await;
         return match resp {
             Ok(response) => {
                 let (parts, body) = response.into_parts();
-                let bytes = hyper::body::to_bytes(body).await;
-                let body = String::from_utf8(bytes.unwrap().to_vec());
+                let bytes = hyper::body::to_bytes(body).await.unwrap();
+                let body = String::from_utf8(bytes.to_vec());
 
                 return Ok(Response::from_parts(parts, body.unwrap()));
             }
@@ -70,7 +71,7 @@ impl ApiCaller {
         };
     }
 
-    pub async fn authorize(&self, request: AuthRequest) -> Result<AuthResponse, hyper::Error> {
+    pub async fn authorize(&self, request: AuthRequest) -> Result<AuthResponse, String> {
         let body = serde_json::to_string(&request).unwrap();
 
         let req = Request::builder()
@@ -79,20 +80,30 @@ impl ApiCaller {
             .uri(request.url)
             .body(Body::from(body));
 
-        let resp = self.http.request(req.unwrap()).await;
+        let resp = self.client.request(req.unwrap()).await;
 
         return match resp {
             Ok(response) => {
-                let bytes = hyper::body::to_bytes(response).await?;
+                let (parts, body) = response.into_parts();
+                let bytes = hyper::body::to_bytes(body).await.unwrap();
+
+                if parts.status != 200 {
+                    let body = String::from_utf8(bytes.to_vec()).unwrap();
+
+                    return Err(body);
+                }
+
                 let body: AuthResponse = serde_json::from_slice(bytes.to_vec().as_slice()).unwrap();
 
                 return Ok(body);
             }
-            Err(e) => Err(e),
+            Err(e) => Err(e.to_string()),
         };
     }
 }
 
 pub fn create_client() -> ApiCaller {
-    ApiCaller { http: Client::new() }
+    let tls = hyper_tls::HttpsConnector::new();
+
+    ApiCaller { client: Client::builder().build(tls) }
 }

@@ -4,14 +4,15 @@ use std::path::PathBuf;
 use csv::{Reader, ReaderBuilder};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CsvCell {
     #[serde(skip_serializing)]
     pub mid: String,
-    #[serde(rename = "id_item")]
+    #[serde(rename = "id_item", skip_serializing)]
     pub id: String,
     pub market: String,
     pub status: i8,
+    #[serde(rename(serialize = "statusReason"))]
     pub status_reason: Option<String>,
 }
 

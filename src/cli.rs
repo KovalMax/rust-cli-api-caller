@@ -20,6 +20,6 @@ pub struct CliParams {
     #[clap(default_value = ",")]
     ///CSV file delimiter
     pub delimiter: String,
-    #[clap(default_value_t = 20)]
-    pub limit: i8,
+    #[clap(default_value_t = 300)]
+    pub limit: u16,
 }
