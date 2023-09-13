@@ -5,7 +5,7 @@ use csv::{Reader, ReaderBuilder};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CsvCell {
+pub struct CsvRow {
     #[serde(skip_serializing)]
     pub mid: String,
     #[serde(rename = "id_item", skip_serializing)]

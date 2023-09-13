@@ -1,6 +1,7 @@
 [api_settings]
 api_uri = ""
 auth_uri = ""
+[auth_credentials]
 auth_user = ""
 auth_password = ""
 [api_url]

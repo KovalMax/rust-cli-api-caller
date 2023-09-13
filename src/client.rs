@@ -1,7 +1,9 @@
 use hyper::{Body, Client, Method, Request, Response};
 use hyper::client::HttpConnector;
-use hyper_tls::HttpsConnector;
+use hyper_rustls::{ConfigBuilderExt, HttpsConnector};
 use serde::{Deserialize, Serialize};
+
+use crate::config::AuthCredentials;
 
 #[derive(Debug, Clone)]
 pub struct ApiCaller {
@@ -26,14 +28,24 @@ pub struct ApiRequest {
 }
 
 impl ApiRequest {
-    pub fn create_api_request(url: String, body: String, auth_token: String, method: Method) -> Self {
-        ApiRequest { url, body, auth_token, method }
+    pub fn create(url: String, body: String, auth_token: String, method: Option<Method>) -> Self {
+        ApiRequest {
+            url,
+            body,
+            auth_token,
+            method: method.unwrap_or(Method::PATCH),
+        }
     }
 }
 
 impl AuthRequest {
-    pub fn create(url: String, method: Method, username: String, password: String) -> Self {
-        AuthRequest { url, method, username, password }
+    pub fn create(url: String, credentials: AuthCredentials, method: Option<Method>) -> Self {
+        AuthRequest {
+            url,
+            method: method.unwrap_or(Method::POST),
+            username: credentials.auth_user,
+            password: credentials.auth_password,
+        }
     }
 }
 
@@ -50,52 +62,76 @@ impl AuthResponse {
 }
 
 impl ApiCaller {
-    pub async fn request(&self, request: ApiRequest) -> hyper::Result<Response<String>> {
-        let req = Request::builder()
+    pub async fn auth_call(&self, request: AuthRequest) -> Result<AuthResponse, String> {
+        let body = serde_json::to_string(&request).unwrap();
+
+        let body_request = Request::builder()
+            .header("Content-Type", "application/json")
+            .method(request.method)
+            .uri(request.url)
+            .body(Body::from(body))
+            .unwrap();
+
+        return self.authorize(body_request).await;
+    }
+
+    pub async fn api_call(&self, request: ApiRequest) -> hyper::Result<Response<String>> {
+        let body_request = Request::builder()
             .header("Content-Type", "application/json")
             .header("Authorization", request.auth_token)
             .method(request.method)
             .uri(request.url)
-            .body(Body::from(request.body));
+            .body(Body::from(request.body)).unwrap();
 
-        let resp = self.client.request(req.unwrap()).await;
+        return self.request(body_request).await;
+    }
+
+    async fn request(&self, request: Request<Body>) -> hyper::Result<Response<String>> {
+        let resp = self
+            .client
+            .request(request)
+            .await;
+
         return match resp {
             Ok(response) => {
                 let (parts, body) = response.into_parts();
-                let bytes = hyper::body::to_bytes(body).await.unwrap();
-                let body = String::from_utf8(bytes.to_vec());
+                let bytes = hyper::body::to_bytes(body)
+                    .await
+                    .unwrap();
 
-                return Ok(Response::from_parts(parts, body.unwrap()));
+                let body = String::from_utf8(bytes.to_vec())
+                    .unwrap();
+
+                Ok(Response::from_parts(parts, body))
             }
             Err(e) => Err(e),
         };
     }
 
-    pub async fn authorize(&self, request: AuthRequest) -> Result<AuthResponse, String> {
-        let body = serde_json::to_string(&request).unwrap();
-
-        let req = Request::builder()
-            .header("Content-Type", "application/json")
-            .method(request.method)
-            .uri(request.url)
-            .body(Body::from(body));
-
-        let resp = self.client.request(req.unwrap()).await;
+    async fn authorize(&self, request: Request<Body>) -> Result<AuthResponse, String> {
+        let resp = self
+            .client
+            .request(request)
+            .await;
 
         return match resp {
             Ok(response) => {
                 let (parts, body) = response.into_parts();
-                let bytes = hyper::body::to_bytes(body).await.unwrap();
+                let bytes = hyper::body::to_bytes(body)
+                    .await
+                    .unwrap();
 
                 if parts.status != 200 {
-                    let body = String::from_utf8(bytes.to_vec()).unwrap();
+                    let body = String::from_utf8(bytes.to_vec())
+                        .unwrap();
 
                     return Err(body);
                 }
 
-                let body: AuthResponse = serde_json::from_slice(bytes.to_vec().as_slice()).unwrap();
+                let body: AuthResponse = serde_json::from_slice(bytes.to_vec().as_slice())
+                    .unwrap();
 
-                return Ok(body);
+                Ok(body)
             }
             Err(e) => Err(e.to_string()),
         };
@@ -103,7 +139,16 @@ impl ApiCaller {
 }
 
 pub fn create_client() -> ApiCaller {
-    let tls = hyper_tls::HttpsConnector::new();
+    let tls = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_native_roots()
+        .with_no_client_auth();
 
-    ApiCaller { client: Client::builder().build(tls) }
+    let connector = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(tls)
+        .https_or_http()
+        .enable_http1()
+        .build();
+
+    ApiCaller { client: Client::builder().build(connector) }
 }

@@ -1,26 +1,47 @@
-use hyper::{Method, Response};
+use hyper::{Response, Result};
 
-use crate::client::{ApiCaller, ApiRequest, AuthRequest, AuthResponse};
+use crate::reader::CsvRow;
 
 pub mod cli;
 pub mod reader;
 pub mod config;
 pub mod client;
 
-
-pub async fn make_auth_call(http: &ApiCaller, auth_url: String, username: String, password: String) -> Result<AuthResponse, String> {
-    let auth_request = AuthRequest::create(
-        auth_url,
-        Method::POST,
-        username,
-        password,
-    );
-
-    return http.authorize(auth_request).await;
+pub struct ApiResult {
+    pub status: u16,
+    pub body: String,
 }
 
-pub async fn make_api_call(http: &ApiCaller, url: String, body: String, auth_token: String, method: Method) -> hyper::Result<Response<String>> {
-    let api_request = ApiRequest::create_api_request(url, body, auth_token, method);
+pub async fn handle_api_result(result: Result<Response<String>>, row: CsvRow) -> ApiResult {
+    let mut success = format!(
+        "Status was changed, MID - {}, status changed to - {}, for market - {}",
+        row.mid, row.status, row.market
+    );
 
-    return http.request(api_request).await;
+    if let Some(reason) = row.status_reason {
+        success.push_str(format!(", status reason - {reason}").as_str());
+    }
+
+    let mut fail = format!("Status wasn't changed, MID - {}, API response - ", row.mid);
+
+    return match result {
+        Ok(res) => {
+            let (parts, body) = res.into_parts();
+            let response_code = parts.status.as_u16();
+
+            match response_code {
+                200..=299 => ApiResult { status: response_code, body: success },
+                _ => {
+                    fail.push_str(body.as_str());
+
+                    ApiResult { status: response_code, body: fail }
+                }
+            }
+        }
+        Err(e) => {
+            fail.push_str(e.to_string().as_str());
+
+            ApiResult { status: 500, body: fail }
+        }
+    };
 }

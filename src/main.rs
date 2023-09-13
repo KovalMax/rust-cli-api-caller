@@ -2,14 +2,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use clap::Parser;
-use hyper::Method;
 use tokio::sync::Semaphore;
 
-use cli_api_caller::{make_api_call, make_auth_call};
 use cli_api_caller::cli::CliParams;
-use cli_api_caller::client::create_client;
+use cli_api_caller::client::{ApiRequest, AuthRequest, create_client};
 use cli_api_caller::config::parse_config;
-use cli_api_caller::reader::{create_reader, CsvCell};
+use cli_api_caller::handle_api_result;
+use cli_api_caller::reader::{create_reader, CsvRow};
 
 #[tokio::main]
 async fn main() {
@@ -19,69 +18,77 @@ async fn main() {
     let client = create_client();
 
     let api_url = config.api_endpoint(args.environment.clone());
+    let auth_url = config.auth_endpoint(args.environment.clone());
+
+    let auth_req = AuthRequest::create(auth_url, config.auth_credentials, None);
+    let auth_response = client
+        .auth_call(auth_req)
+        .await;
+    let token = match auth_response {
+        Ok(r) => r.token(),
+        Err(e) => {
+            panic!("Auth failed with error - {}", e);
+        }
+    };
+
+
+    let delimiter = args
+        .delimiter
+        .as_bytes()
+        .first()
+        .unwrap();
+
     let semaphore = Arc::new(Semaphore::new(args.limit as usize));
-
-    let auth_response = make_auth_call(
-        &client,
-        config.auth_endpoint(args.environment.clone()),
-        config.api_settings.auth_user,
-        config.api_settings.auth_password,
-    ).await.unwrap();
-
-    let delimiter = args.delimiter.as_bytes().first().unwrap();
     let mut reader = create_reader(args.path, delimiter);
+    let mut join_handles = Vec::new();
 
-    let mut total = 0;
+    for row in reader.deserialize::<CsvRow>() {
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .unwrap();
 
-    for line in reader.deserialize::<CsvCell>() {
-        total += 1;
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let row = row.unwrap();
         let url = api_url.clone();
-        let token = auth_response.token().clone();
+        let token = token.clone();
         let client = client.clone();
-        let line = line.unwrap();
 
-        tokio::spawn(async move {
-            let line = line.to_owned();
-            let client = client.to_owned();
-            let url = url.to_owned();
-            let token = token.to_owned();
+        join_handles.push(tokio::spawn(async move {
+            let replaced_url = url.replace("{id}", row.id.as_str());
+            let body_json = serde_json::to_string(&row).unwrap();
 
-            let replaced_url = url.replace("{id}", line.id.as_str());
-            let json = serde_json::to_string(&line).unwrap();
-
-            let response = make_api_call(
-                &client,
+            let request = ApiRequest::create(
                 replaced_url,
-                json,
+                body_json,
                 token,
-                Method::PATCH,
-            ).await;
+                None,
+            );
+            let response = client
+                .api_call(request)
+                .await;
 
-            match response {
-                Ok(res) => {
-                    let (parts, body) = res.into_parts();
-                    if parts.status != 200 {
-                        println!("{}",
-                                 format!("Status change failed for item with mid {}, response: {}",
-                                         line.mid, body)
-                        );
-                    } else {
-                        println!("{}",
-                                 format!("Status has been changed to {} for {} region for item with mid {}",
-                                         line.status, line.market, line.mid)
-                        );
-                    }
-                }
-                Err(e) => {
-                    println!("Error happened during API call, {}", e.to_string())
-                }
-            }
+            let result = handle_api_result(response, row)
+                .await;
+
             drop(permit);
-        });
+
+            return result;
+        }));
     }
 
+    let total = join_handles.len();
+    for handle in join_handles {
+        let result = handle.await.unwrap();
+        println!("{}", result.body);
+    }
+
+
+    semaphore.close();
+
     let elapsed = now.elapsed();
-    println!("Finished!\nTotal tasks executed: {}\nTime elapsed: {} - seconds",
-             total, elapsed.as_secs());
+    println!(
+        "\nDone!\nTotal tasks executed: {}\nTime elapsed: {} - seconds",
+        total, elapsed.as_secs()
+    );
 }
