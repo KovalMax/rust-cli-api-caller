@@ -10,6 +10,7 @@ pub mod client;
 pub struct ApiResult {
     pub status: u16,
     pub body: String,
+    pub succeed: bool,
 }
 
 pub async fn handle_api_result(result: Result<Response<String>>, row: CsvRow) -> ApiResult {
@@ -30,18 +31,18 @@ pub async fn handle_api_result(result: Result<Response<String>>, row: CsvRow) ->
             let response_code = parts.status.as_u16();
 
             match response_code {
-                200..=299 => ApiResult { status: response_code, body: success },
+                200..=299 => ApiResult { status: response_code, body: success, succeed: true },
                 _ => {
                     fail.push_str(body.as_str());
 
-                    ApiResult { status: response_code, body: fail }
+                    ApiResult { status: response_code, body: fail, succeed: false }
                 }
             }
         }
         Err(e) => {
             fail.push_str(e.to_string().as_str());
 
-            ApiResult { status: 500, body: fail }
+            ApiResult { status: 500, body: fail, succeed: false }
         }
     };
 }

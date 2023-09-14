@@ -12,6 +12,8 @@ use cli_api_caller::reader::{create_reader, CsvRow};
 
 #[tokio::main]
 async fn main() {
+    println!("-- Starting execution --\n");
+
     let now = Instant::now();
     let args = CliParams::parse();
     let config = parse_config();
@@ -38,9 +40,9 @@ async fn main() {
         .first()
         .unwrap();
 
-    let semaphore = Arc::new(Semaphore::new(args.limit as usize));
-    let mut reader = create_reader(args.path, delimiter);
     let mut join_handles = Vec::new();
+    let mut reader = create_reader(args.path, delimiter);
+    let semaphore = Arc::new(Semaphore::new(args.limit as usize));
 
     for row in reader.deserialize::<CsvRow>() {
         let permit = semaphore
@@ -55,6 +57,8 @@ async fn main() {
         let client = client.clone();
 
         join_handles.push(tokio::spawn(async move {
+            drop(permit);
+
             let replaced_url = url.replace("{id}", row.id.as_str());
             let body_json = serde_json::to_string(&row).unwrap();
 
@@ -64,31 +68,29 @@ async fn main() {
                 token,
                 None,
             );
-            let response = client
-                .api_call(request)
-                .await;
+            let response = client.api_call(request);
+            let result = handle_api_result(response.await, row);
 
-            let result = handle_api_result(response, row)
-                .await;
-
-            drop(permit);
-
-            return result;
+            return result.await;
         }));
     }
 
-    let total = join_handles.len();
+    let (mut successful, mut failed) = (0, 0);
     for handle in join_handles {
         let result = handle.await.unwrap();
+        if result.succeed {
+            successful += 1;
+        } else {
+            failed += 1;
+        }
+
         println!("{}", result.body);
     }
 
-
     semaphore.close();
-
     let elapsed = now.elapsed();
     println!(
-        "\nDone!\nTotal tasks executed: {}\nTime elapsed: {} - seconds",
-        total, elapsed.as_secs()
+        "\nDone!\nTotal tasks executed: {}\nSuccessful: {} | Failed: {}\nTime elapsed: {:.1} - seconds",
+        successful + failed, successful, failed, elapsed.as_secs_f32()
     );
 }
