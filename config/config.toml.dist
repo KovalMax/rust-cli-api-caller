@@ -1,6 +1,9 @@
 [api_settings]
 api_uri = ""
 auth_uri = ""
+use_auth = false
+api_method = "PATCH"
+auth_method = "POST"
 [auth_credentials]
 auth_user = ""
 auth_password = ""

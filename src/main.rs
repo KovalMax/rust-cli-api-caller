@@ -4,10 +4,10 @@ use std::time::Instant;
 use clap::Parser;
 use tokio::sync::Semaphore;
 
+use cli_api_caller::api_service::create_api_service;
 use cli_api_caller::cli::CliParams;
-use cli_api_caller::client::{ApiRequest, AuthRequest, create_client};
+use cli_api_caller::client::AuthRequest;
 use cli_api_caller::config::parse_config;
-use cli_api_caller::handle_api_result;
 use cli_api_caller::reader::{create_reader, CsvRow};
 
 #[tokio::main]
@@ -17,22 +17,18 @@ async fn main() {
     let now = Instant::now();
     let args = CliParams::parse();
     let config = parse_config();
-    let client = create_client();
+    let api_service = create_api_service();
 
     let api_url = config.api_endpoint(args.environment.clone());
     let auth_url = config.auth_endpoint(args.environment.clone());
 
-    let auth_req = AuthRequest::create(auth_url, config.auth_credentials, None);
-    let auth_response = client
-        .auth_call(auth_req)
-        .await;
-    let token = match auth_response {
-        Ok(r) => r.token(),
-        Err(e) => {
-            panic!("Auth failed with error - {}", e);
-        }
-    };
+    let auth_req = AuthRequest::create(
+        auth_url,
+        config.auth_credentials,
+        config.api_settings.auth_method(),
+    );
 
+    let auth = api_service.authenticate(auth_req).await;
 
     let delimiter = args
         .delimiter
@@ -45,34 +41,31 @@ async fn main() {
     let semaphore = Arc::new(Semaphore::new(args.limit as usize));
 
     for row in reader.deserialize::<CsvRow>() {
+        let row = match row {
+            Ok(r) => r,
+            Err(e) => {
+                println!("Failed to deserialize row, {}", e);
+                continue;
+            }
+        };
+
         let permit = semaphore
             .clone()
             .acquire_owned()
             .await
             .unwrap();
 
-        let row = row.unwrap();
         let url = api_url.clone();
-        let token = token.clone();
-        let client = client.clone();
+        let token = auth.token().clone();
+        let client = api_service.clone();
+        let method = config.api_settings.api_method().clone();
 
-        join_handles.push(tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             drop(permit);
+            return client.send_api_call(token, url, row, method).await;
+        });
 
-            let replaced_url = url.replace("{id}", row.id.as_str());
-            let body_json = serde_json::to_string(&row).unwrap();
-
-            let request = ApiRequest::create(
-                replaced_url,
-                body_json,
-                token,
-                None,
-            );
-            let response = client.api_call(request);
-            let result = handle_api_result(response.await, row);
-
-            return result.await;
-        }));
+        join_handles.push(handle);
     }
 
     let (mut successful, mut failed) = (0, 0);

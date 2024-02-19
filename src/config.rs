@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 
+use hyper::Method;
 use serde::Deserialize;
 
 use crate::cli::Environment;
@@ -9,6 +10,28 @@ use crate::cli::Environment;
 pub struct ApiSettings {
     pub api_uri: String,
     pub auth_uri: String,
+    pub use_auth: bool,
+    pub auth_method: String,
+    pub api_method: String,
+}
+
+impl ApiSettings {
+    pub fn auth_method(&self) -> Option<Method> {
+        return Some(self.map_method(self.auth_method.clone()));
+    }
+    pub fn api_method(&self) -> Option<Method> {
+        return Some(self.map_method(self.api_method.clone()));
+    }
+
+    fn map_method(&self, method: String) -> Method {
+        return match method.as_str() {
+            "POST" => Method::POST,
+            "PATCH" => Method::PATCH,
+            "PUT" => Method::PUT,
+            "GET" => Method::GET,
+            _ => Method::POST,
+        };
+    }
 }
 
 #[derive(Deserialize, Debug)]

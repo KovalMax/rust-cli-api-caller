@@ -1,4 +1,4 @@
-use hyper::{Body, Client, Method, Request, Response};
+use hyper::{Body, Client, Error, Method, Request};
 use hyper::client::HttpConnector;
 use hyper_rustls::{ConfigBuilderExt, HttpsConnector};
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ pub struct ApiCaller {
     client: Client<HttpsConnector<HttpConnector>>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct AuthRequest {
     #[serde(skip_serializing)]
     url: String,
@@ -49,6 +49,12 @@ impl AuthRequest {
     }
 }
 
+#[derive(Debug)]
+pub struct ApiResponse {
+    pub status: u16,
+    pub body: String,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct AuthResponse {
     access_token: String,
@@ -75,7 +81,7 @@ impl ApiCaller {
         return self.authorize(body_request).await;
     }
 
-    pub async fn api_call(&self, request: ApiRequest) -> hyper::Result<Response<String>> {
+    pub async fn api_call(&self, request: ApiRequest) -> Result<ApiResponse, Error> {
         let body_request = Request::builder()
             .header("Content-Type", "application/json")
             .header("Authorization", request.auth_token)
@@ -86,7 +92,7 @@ impl ApiCaller {
         return self.request(body_request).await;
     }
 
-    async fn request(&self, request: Request<Body>) -> hyper::Result<Response<String>> {
+    async fn request(&self, request: Request<Body>) -> Result<ApiResponse, Error> {
         let resp = self
             .client
             .request(request)
@@ -102,7 +108,7 @@ impl ApiCaller {
                 let body = String::from_utf8(bytes.to_vec())
                     .unwrap();
 
-                Ok(Response::from_parts(parts, body))
+                Ok(ApiResponse { body, status: parts.status.as_u16() })
             }
             Err(e) => Err(e),
         };
