@@ -10,6 +10,7 @@ pub struct CsvRow {
     pub mid: String,
     #[serde(rename = "id_item", skip_serializing)]
     pub id: String,
+    #[serde(skip_serializing)]
     pub market: String,
     pub status: i8,
     #[serde(rename(serialize = "statusReason"))]
@@ -17,9 +18,9 @@ pub struct CsvRow {
 }
 
 pub fn create_reader(filepath: PathBuf, delimiter: &u8) -> Reader<File> {
-    return ReaderBuilder::new()
+    ReaderBuilder::new()
         .delimiter(*delimiter)
         .flexible(true)
         .from_path(filepath)
-        .expect("Error building csv reader");
+        .expect("Error building csv reader")
 }

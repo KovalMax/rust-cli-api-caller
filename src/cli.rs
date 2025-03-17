@@ -11,7 +11,7 @@ pub enum Environment {
 
 #[derive(Parser, Debug, Clone)]
 #[clap(author = "Max Koval", version)]
-///Helper package in case you need to read data from file and push it into some API
+///Helper package in case you need to read data from file and push it to API
 pub struct CliParams {
     #[clap(value_enum)]
     pub environment: Environment,

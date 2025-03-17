@@ -62,22 +62,34 @@ async fn main() {
 
         let handle = tokio::spawn(async move {
             drop(permit);
+
             return client.send_api_call(token, url, row, method).await;
         });
 
-        join_handles.push(handle);
+        join_handles.push(handle.await);
     }
 
     let (mut successful, mut failed) = (0, 0);
     for handle in join_handles {
-        let result = handle.await.unwrap();
+        let result = handle.unwrap();
         if result.succeed {
             successful += 1;
+            print!(
+                "Status successfully changed for item {} in market {}, new status is {}",
+                result.row.mid, result.row.market, result.row.status
+            );
+            if let Some(reason) = result.row.status_reason {
+                print!(", reason is {}", reason)
+            }
+            
         } else {
+            print!(
+                "Status did not changed for item {} in market {}, response is {}",
+                result.row.mid, result.row.market, result.body
+            );
             failed += 1;
         }
-
-        println!("{}", result.body);
+        print!("\n")
     }
 
     semaphore.close();
